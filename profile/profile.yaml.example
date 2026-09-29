@@ -1,0 +1,29 @@
+# Your profile — the agent drafts only from what's here.
+# Copy this file to profile.yaml and fill it in. Never invent experience:
+# if it's not in this file (or your resume/LinkedIn), the agent may not claim it.
+
+name: "Your Name"
+email: "you@example.com"
+linkedin_url: "https://www.linkedin.com/in/your-handle/"
+
+# Path to your resume file (pdf or txt), relative to repo root.
+resume_path: "profile/resume.pdf"
+
+# The roles you're hunting. The agent searches for these.
+target_roles:
+  - "Forward Deployed Engineer"
+  - "AI Engineer"
+
+locations:
+  - "Toronto, ON"
+  - "Remote"
+
+# Concrete experience bullets the agent may draw on when drafting.
+# Keep each one to a single verifiable fact.
+experience_bullets:
+  - "Built ..."
+  - "Shipped ..."
+
+# Anything the agent should never claim or mention.
+never_claim:
+  - "Senior-level titles I haven't held"
