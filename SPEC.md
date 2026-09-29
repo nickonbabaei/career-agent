@@ -62,8 +62,11 @@ _TODO — to be spec'd. Draft direction:_
 ## Tool contracts
 
 _TODO — to be spec'd. Tools so far:_
-- `search_jobs(role_types, locations)` — returns postings; fails: API
-  error → retry once, then skip run with logged error.
+- `search_jobs(profile)` — returns `list[JobPosting]` from a third-party API
+  using target roles and locations. Empty results return `[]`. Provider errors
+  raise `JobSearchError`; the future workflow retries once, then ends the run
+  with a logged error. The current unimplemented stub raises `NotImplementedError`
+  immediately. Search does not perform relevance classification.
 - `fetch_posting(url)` — returns posting text; fails: dead link / parse
   failure → skip role, log reason.
 - `classify_relevance(posting, profile)` — returns fit/no-fit + reason.
@@ -81,6 +84,38 @@ _TODO — to be spec'd. Draft direction:_
 - Anything outside scope → refuse and log, never improvise.
 
 ## Decisions log
+
+- 2026-09-29: Add the live search contract in agent/tools.py, leaving its
+  implementation to the user. A separate agent/fixtures.py loader reads an
+  explicitly labeled fictional JSON jobs fixture for offline development.
+  It validates fields and returns JobPosting objects without searching,
+  filtering, network calls, or automatic fallback from live search. Invalid
+  fixture files raise FixtureError immediately; valid empty lists return [].
+
+- 2026-09-29: First implementation slice defines Python dataclasses for Profile,
+  JobPosting, RelevanceDecision, and Draft, plus a YAML profile loader. Required
+  profile fields are name and nonempty lists of target_roles, locations, and
+  experience_bullets. Optional fields are email, linkedin_url, resume_path,
+  and never_claim. Unknown keys and invalid types fail immediately with a
+  ProfileConfigError; no retry for local configuration errors. Resume paths
+  and LinkedIn URLs are stored as metadata only, not read or fetched.
+
+- 2026-09-28: First v0.1 milestone is an offline CLI run with synthetic
+  fixtures, validated YAML profile config, a fixed pipeline, and drafts saved
+  locally for review. Fixture mode is explicitly labeled and does not perform
+  model classification or generate tailored outreach. Live search, relevance,
+  and drafting implementations belong to the user; scaffold exposes contracts.
+- 2026-09-28: At the user's request, defer eval sets and the drafting-eval merge
+  requirement until after the first full run. Verify scaffold plumbing now.
+  Also defer enrichment, resume/LinkedIn ingestion, send integration, tracker,
+  advanced preferences, claim IDs, and external tracing. v0.1 uses only explicit
+  profile experience bullets and posting context; default recipient is hiring team.
+- 2026-09-28: A tool failure retries once, then records a visible failure.
+  Search failure ends the run; per-role failure skips that role and continues.
+  Unimplemented functions and invalid config fail immediately. Empty search
+  results and rejected jobs are successful outcomes distinct from errors.
+  Each run writes JSON results and Markdown drafts into a unique ignored local
+  directory. Fixture runs are marked as such in every draft.
 
 - 2026-09-28: Open-source on GitHub so anyone can use it. User background
   is config (`profile/`), not hardcoded.

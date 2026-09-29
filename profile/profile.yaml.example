@@ -1,11 +1,12 @@
 # Your profile — the agent drafts only from what's here.
 # Copy this file to profile.yaml and fill it in. Never invent experience:
-# if it's not in this file (or your resume/LinkedIn), the agent may not claim it.
+# v0.1 uses only the explicit experience bullets below.
 
 name: "Your Name"
 email: "you@example.com"
 linkedin_url: "https://www.linkedin.com/in/your-handle/"
 
+# Optional metadata for later: v0.1 does not read resumes or fetch LinkedIn.
 # Path to your resume file (pdf or txt), relative to repo root.
 resume_path: "profile/resume.pdf"
 

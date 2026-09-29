@@ -1,0 +1,26 @@
+{
+  "fictional": true,
+  "jobs": [
+    {
+      "title": "AI Engineer (fictional sample)",
+      "company": "Example AI Company",
+      "location": "Toronto, ON",
+      "description": "Fictional posting: build Python applications that use language models, integrate APIs, and collaborate with customers on prototypes.",
+      "source_url": "https://example.com/fictional-jobs/ai-engineer"
+    },
+    {
+      "title": "Forward Deployed Engineer (fictional sample)",
+      "company": "Example Software Company",
+      "location": "Remote - Canada",
+      "description": "Fictional posting: work with customers to understand requirements, implement data integrations, and deliver software demonstrations. Python and communication skills are required.",
+      "source_url": "https://example.com/fictional-jobs/forward-deployed-engineer"
+    },
+    {
+      "title": "Pastry Chef (fictional sample)",
+      "company": "Example Bakery",
+      "location": "Vancouver, BC - on site",
+      "description": "Fictional posting: prepare pastries, manage kitchen inventory, and train baking staff. Professional pastry experience is required.",
+      "source_url": "https://example.com/fictional-jobs/pastry-chef"
+    }
+  ]
+}
