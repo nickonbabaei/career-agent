@@ -65,8 +65,9 @@ _TODO — to be spec'd. Tools so far:_
 - `search_jobs(profile)` — returns `list[JobPosting]` from a third-party API
   using target roles and locations. Empty results return `[]`. Provider errors
   raise `JobSearchError`; the future workflow retries once, then ends the run
-  with a logged error. The current unimplemented stub raises `NotImplementedError`
-  immediately. Search does not perform relevance classification.
+  with a logged error. Missing local configuration raises ValueError immediately.
+  The initial implementation searches the first role/location in Canada only.
+  Search does not perform relevance classification.
 - `fetch_posting(url)` — returns posting text; fails: dead link / parse
   failure → skip role, log reason.
 - `classify_relevance(posting, profile)` — returns fit/no-fit + reason.
@@ -84,6 +85,16 @@ _TODO — to be spec'd. Draft direction:_
 - Anything outside scope → refuse and log, never improvise.
 
 ## Decisions log
+
+- 2026-09-29: Implement the first live search with JSearch search-v2 using
+  OPENWEBNINJA_API_KEY from the environment. One request uses the first target
+  role and first location, with country=ca for this initial Canadian slice.
+  No pagination or multi-preference search yet. Timeout is 30 seconds; the
+  future workflow owns retries. Missing key/preferences raise ValueError before
+  any request. HTTP, connection, and response-shape errors raise JobSearchError.
+  Title, company, description, and apply link must be nonempty strings; absent
+  location is represented as "Not specified". An unusable posting fails the
+  response visibly rather than silently dropping it.
 
 - 2026-09-29: Add the live search contract in agent/tools.py, leaving its
   implementation to the user. A separate agent/fixtures.py loader reads an

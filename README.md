@@ -41,7 +41,7 @@ profile/               user background — the single source of truth (see profi
 agent/                 the workflow runtime, tools, approval gates
   models.py            shared data structures (not AI models)
   profile.py           YAML profile loading and validation
-  tools.py             live search contract; implementation left for you
+  tools.py             one-request JSearch integration
   fixtures.py          fictional sample-job loader for offline development
 fixtures/              synthetic inputs; no real job listings
 server/                review-queue UI (v0.2)
@@ -66,8 +66,8 @@ and what's still open.
 ## Setup
 
 The scaffold provides data structures, profile loading, and fictional sample
-job loading. Live search, model calls, and saving drafts are not implemented
-yet. Requires Python 3.10+.
+job loading, and a one-request live JSearch integration. Model calls and saving
+drafts are not implemented yet. Requires Python 3.10+.
 
 ```sh
 python3 -m venv .venv
@@ -114,8 +114,37 @@ The fixture loader returns all three fictional postings, including an unrelated
 role for future filtering practice. It does not use the profile to search or
 decide fit. The `fictional` marker and sample titles identify these as examples.
 
-Your next implementation goes in `agent/tools.py`:
-`search_jobs(profile) -> list[JobPosting]`. It will use a jobs API and return the
-same data structure as the sample loader. Until implemented, it raises
-`NotImplementedError`; it never silently substitutes samples. The future workflow
-will handle retries for `JobSearchError`. No workflow runner exists yet.
+## Try live search
+
+`agent/tools.py` provides `search_jobs(profile) -> list[JobPosting]`. It searches
+the first target role and first location only, using `country=ca`. All-preference
+search and pagination are deferred. It never substitutes sample results.
+
+Set your key privately in your zsh terminal (input is hidden):
+
+```sh
+read -s "OPENWEBNINJA_API_KEY?Paste your API key, then press Enter: "
+export OPENWEBNINJA_API_KEY
+```
+
+Then make one live request:
+
+```sh
+python - <<'PY'
+from agent.profile import load_profile
+from agent.tools import search_jobs
+
+profile = load_profile("profile/profile.yaml.example")
+jobs = search_jobs(profile)
+print(f"Found {len(jobs)} jobs")
+for job in jobs:
+    print(f"{job.title} | {job.company} | {job.location}")
+PY
+```
+
+The example searches Forward Deployed Engineer in Toronto. To use your own
+preferences, load `profile/profile.yaml` instead. Only role and location are
+sent to JSearch, not your experience or contact details. Missing configuration
+raises `ValueError`; request/response failures raise `JobSearchError`. Missing
+location is labeled "Not specified"; missing required job fields fail visibly.
+The future workflow will handle retries; this function does not retry on its own.
