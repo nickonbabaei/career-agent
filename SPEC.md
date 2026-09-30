@@ -73,7 +73,10 @@ _TODO — to be spec'd. Tools so far:_
 - `classify_relevance(posting, profile)` — returns fit/no-fit + reason.
 - `research_company(posting)` — returns company context + hiring-team
   contacts (best effort).
-- `draft_outreach(posting, research, profile)` — returns draft message.
+- `draft_outreach(job, profile)` — one Gemini call returns a validated Draft;
+  missing key raises ValueError, provider/format errors raise DraftingError.
+- `save_draft(draft)` — saves a unique Markdown file under ignored drafts/;
+  returns its path, raises DraftSaveError on filesystem failure.
 - `send_email(draft)` — gated behind human approval; returns message ID.
 
 ## Escalation
@@ -85,6 +88,79 @@ _TODO — to be spec'd. Draft direction:_
 - Anything outside scope → refuse and log, never improvise.
 
 ## Decisions log
+
+- 2026-09-30: Distinguish recruiting agencies from actual employers using
+  explicit posting text. When recruiting for a client, say "the role you're
+  recruiting for" and never infer the unnamed client's identity. When ambiguous,
+  refer simply to the role. Missing leadership evidence means "not documented",
+  not a claim that the candidate has an individual-contributor background.
+
+- 2026-09-30: Add agent.cli and reusable workflow.run_workflow. Search once,
+  process up to --max-jobs postings (default 3, first results not ranked),
+  classify each and draft only relevant jobs. Retry provider/save failures once,
+  log both attempts, skip a role after its second failure, and continue. Failed
+  search ends the run. Save incremental results.json and Markdown in a unique
+  ignored drafts/run-* directory, retaining decisions and errors. Missing config
+  fails before network calls. Failure to persist run results stops visibly.
+
+- 2026-09-30: Refine outreach to 60-100 words in three short paragraphs,
+  connecting one supported experience example to one concrete responsibility
+  from the posting. Avoid generic cover-letter openings and application claims.
+  End with a simple conversation request. Recipient-level personalization awaits
+  verified contact research; retain Hiring team now. Format checks are not an
+  assessment of message quality; live review and deferred evals remain necessary.
+
+- 2026-09-30: Add one-message drafting using the existing Gemini model and
+  JSON schema API. Use only explicit experience bullets for candidate claims,
+  respect never_claim, and use posting facts for tailoring. No research or
+  invented contacts. Body addresses Hiring team, targets 80-150 words, and
+  ends with a low-pressure conversation request. Append the profile name locally.
+  Save Markdown with job context and a pending-human-review label under ignored
+  drafts/, using unique filenames. The one-draft demo checks the first search
+  result and drafts only if relevant; retries a failed step once, then stops
+  visibly. Full multi-job CLI wiring and eval sets remain deferred.
+
+- 2026-09-29: Tighten relevance reasons to separate Match, Gap, and Location
+  evidence within the existing reason string. Preserve original experience
+  scope (prototype versus production, contribution versus leadership). Surface
+  explicit unmet or unverified requirements without inventing experience or
+  remote eligibility. Compare previous and revised prompts on identical inputs
+  as a manual check, not a claim of measured general quality improvement.
+
+- 2026-09-29: Correct relevance handling of never_claim after observed false
+  rejections. These constraints govern statements about the candidate, not job
+  eligibility or desired seniority. Do not reject solely because a posting has a
+  title the candidate has not held or because of a never_claim entry. Assess
+  actual responsibilities and explicit qualification evidence; describe unknowns
+  without treating absent experience as a proven mismatch. Preserve these
+  constraints for factual explanations and future outreach drafting.
+
+- 2026-09-29: Correct Gemini selection to gemini-3.5-flash-lite after a 404
+  on a new project. Google's availability notice restricts 2.5 models to prior
+  users and recommends 3.5 Flash-Lite for new projects; its standard input/output
+  currently has Free-tier pricing. Preserve the no-paid-fallback policy.
+
+- 2026-09-29: Switch relevance from OpenAI to Gemini 2.5 Flash-Lite after the
+  user confirmed a Gemini Free-tier project. Use GEMINI_API_KEY, one standard
+  generateContent request, structured JSON, and the existing decision contract.
+  No automatic provider/model fallback or billing changes. Free usage depends on
+  the key's project remaining Free tier; code cannot infer billing from the key.
+  Quota errors stop the call. Start with fictional inputs because unpaid-service
+  content may be used to improve Google products. Preserve prompt policy and
+  local validation; defer evals as previously agreed.
+
+- 2026-09-29: Relevance uses one OpenAI Responses API request per job, with
+  gpt-4.1-mini as the initial configurable baseline (OPENAI_MODEL override).
+  OPENAI_API_KEY stays in the environment. Keep plausible matches and reasonable
+  stretch roles; reject clear role/location/qualification mismatches. Unknown
+  qualifications are not invented or automatically treated as disqualifications;
+  explain uncertainty. Posting/profile text is data, not executable instructions.
+  Send preferences, experience bullets, and never_claim, not contact identifiers.
+  Strict JSON output must contain boolean is_relevant and nonempty string reason.
+  Missing configuration raises ValueError. Request failures, refusal, incomplete
+  output, and malformed decisions raise RelevanceError, never a false no-fit.
+  The future workflow owns one retry then logging/skipping; the classifier itself
+  makes one request with a 60-second timeout and store=false. Evals remain deferred.
 
 - 2026-09-29: Implement the first live search with JSearch search-v2 using
   OPENWEBNINJA_API_KEY from the environment. One request uses the first target

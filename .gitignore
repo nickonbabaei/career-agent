@@ -1,6 +1,7 @@
 .env
 __pycache__/
 .venv/
+drafts/
 *.db
 profile/profile.yaml
 profile/resume.pdf

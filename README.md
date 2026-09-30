@@ -42,6 +42,12 @@ agent/                 the workflow runtime, tools, approval gates
   models.py            shared data structures (not AI models)
   profile.py           YAML profile loading and validation
   tools.py             one-request JSearch integration
+  relevance.py         Gemini prompt, structured output, relevance classification
+  drafting.py          grounded outreach prompt and Gemini call
+  storage.py           unique Markdown files saved for human review
+  draft_one.py         one-job search/filter/draft/save demo
+  workflow.py          multi-job workflow and incremental run reports
+  cli.py               terminal arguments and run summary
   fixtures.py          fictional sample-job loader for offline development
 fixtures/              synthetic inputs; no real job listings
 server/                review-queue UI (v0.2)
@@ -66,8 +72,8 @@ and what's still open.
 ## Setup
 
 The scaffold provides data structures, profile loading, and fictional sample
-job loading, and a one-request live JSearch integration. Model calls and saving
-drafts are not implemented yet. Requires Python 3.10+.
+job loading, live JSearch integration, Gemini relevance filtering, and drafting
+with local review files. Requires Python 3.10+.
 
 ```sh
 python3 -m venv .venv
@@ -147,4 +153,91 @@ preferences, load `profile/profile.yaml` instead. Only role and location are
 sent to JSearch, not your experience or contact details. Missing configuration
 raises `ValueError`; request/response failures raise `JobSearchError`. Missing
 location is labeled "Not specified"; missing required job fields fail visibly.
-The future workflow will handle retries; this function does not retry on its own.
+The workflow handles retries; this function does not retry on its own.
+
+## Classify one job
+
+Export `GEMINI_API_KEY` privately in the same terminal as your JSearch key:
+
+```sh
+read -s "GEMINI_API_KEY?Paste your Gemini API key, then press Enter: "
+export GEMINI_API_KEY
+```
+
+Create your local `profile/profile.yaml` from the example and fill in real
+experience bullets before assessing personal fit. The placeholder bullets in
+the example are not a meaningful representation of your qualifications.
+
+The following makes one JSearch request and, if any jobs are returned, one
+Gemini request. It sends your preferences, experience bullets, and never_claim
+constraints to Gemini along with the posting, omitting name/contact fields.
+
+```sh
+python - <<'PY'
+from agent.profile import load_profile
+from agent.tools import search_jobs
+from agent.relevance import classify_relevance
+
+profile = load_profile("profile/profile.yaml")
+jobs = search_jobs(profile)
+if jobs:
+    job = jobs[0]
+    decision = classify_relevance(job, profile)
+    print(f"{job.title} | {job.company}")
+    print("Relevant:", decision.is_relevant)
+    print("Reason:", decision.reason)
+else:
+    print("No jobs returned; no model call made.")
+PY
+```
+
+The classifier uses `gemini-3.5-flash-lite` standard generateContent with JSON
+schema output. Use a key from a project that remains on Free tier with billing
+not enabled. The code does not check project billing status; the model also has
+paid pricing if you later enable billing. It never switches providers/models on
+failure. Free quotas can vary; inspect them in AI Studio. Google may use free-tier
+content to improve products, so begin with fictional inputs.
+
+The prompt in `agent/relevance.py` keeps plausible matches and explains unknowns.
+Blocked, incomplete, malformed, and failed responses raise `RelevanceError`, not
+no-fit decisions. Each invocation makes one request; workflow code owns
+retries. No additional Python dependency is needed.
+
+## Draft one outreach message
+
+For a multi-job run, use:
+
+```sh
+python -m agent.cli --profile profile/profile.yaml --max-jobs 3
+```
+
+Requires both exported API keys. The limit selects the first returned postings,
+not the highest-ranked matches. Search still uses only the first target role and
+location and one JSearch page. Each run saves `results.json` (postings, decisions,
+drafts, and errors) plus draft Markdown under a unique gitignored `drafts/run-*`
+folder. A failed step retries once; failed jobs are logged and skipped. Exhausted
+search failure ends the run. Local config/report-write failures stop visibly.
+The command exits nonzero for failures. With three jobs, expect one search and
+up to six Gemini calls, plus retries. Nothing sends. Use `--help` for arguments.
+
+The earlier single-job demo also remains available:
+
+With your local profile filled in and both OPENWEBNINJA_API_KEY and GEMINI_API_KEY
+exported in the activated terminal, run from the repository root:
+
+```sh
+python -m agent.draft_one
+```
+
+This searches once, classifies only the first posting, and drafts only if relevant.
+It makes one JSearch call and at most two Gemini calls, plus one retry per failed
+step. If the first job is rejected or search returns nothing, no draft is made.
+After a second failure this one-job demo stops visibly. Use agent.cli above for
+multi-job runs. It uses the same Gemini Free-tier project; it does not enable billing.
+
+Drafting sends experience bullets and never_claim constraints alongside the job,
+without contact fields. Your profile name is appended locally as a signature.
+Review the printed message and the unique Markdown file saved under gitignored
+`drafts/`. Each artifact is labeled pending human review and not sent. No send
+functionality exists. Output validation checks format, not factual accuracy;
+verify every claim and edit the draft before copying it elsewhere.
