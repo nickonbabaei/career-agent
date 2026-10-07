@@ -66,8 +66,14 @@ _TODO — to be spec'd. Tools so far:_
   using target roles and locations. Empty results return `[]`. Provider errors
   raise `JobSearchError`; the future workflow retries once, then ends the run
   with a logged error. Missing local configuration raises ValueError immediately.
-  The initial implementation searches the first role/location in Canada only.
+  This legacy helper searches the first role/location using search_country.
+  The CLI uses plan_queries and search_query across preferences, within its
+  request budget; failed queries do not discard successful batches.
   Search does not perform relevance classification.
+- `rank_jobs(candidates, profile)` — one call returns every candidate ID once,
+  in strongest-fit order with reasons. Empty input returns []. Missing key raises
+  ValueError; request/shape/ID errors raise RankingError. Retry once, then retain
+  assessments without a ranked shortlist or drafts.
 - `fetch_posting(url)` — returns posting text; fails: dead link / parse
   failure → skip role, log reason.
 - `classify_relevance(posting, profile)` — returns fit/no-fit + reason.
@@ -88,6 +94,154 @@ _TODO — to be spec'd. Draft direction:_
 - Anything outside scope → refuse and log, never improvise.
 
 ## Decisions log
+
+- 2026-10-07: Add work_experience records (title, company, start_date, end_date,
+  achievements), plus projects, education, and skills lists. Keep legacy
+  experience_bullets as uncategorized facts for lossless compatibility. At least
+  one background fact is required. Model inputs use a deterministic facts list
+  with each achievement attached to its explicit role/date context; no inferred
+  tenure or qualifications. UI supports add/remove role cards and separate
+  background sections. Migrate only explicit headings/associations, preserve
+  uncertain facts for user review, and back up the private profile locally.
+
+- 2026-10-07: Replace UI YAML editing with a prefilled structured profile form.
+  Repeatable fields preserve each experience bullet/role/location verbatim;
+  optional preferences and drafting restrictions remain explicit user inputs.
+  Preserve contact/resume metadata when saving. Validate through the existing
+  profile loader and atomically write YAML; no extraction or invented facts.
+
+- 2026-10-07: Local UI accepts provider keys once through password fields.
+  Persist in gitignored .local/keys.json with owner-only directory/file permissions;
+  this is local plaintext storage, not an encrypted vault. Never return saved
+  values to the browser. Blank inputs retain existing keys; saved keys override
+  terminal keys for UI workers. Add a macOS double-click launcher using the
+  existing virtual environment. No terminal activation/export required.
+
+- 2026-10-07: Start local v0.2 UI using a loopback-only Python HTTP server and
+  browser HTML/CSS/JavaScript, reusing existing CLI workflows in one background
+  subprocess at a time. Edit validated local profile YAML, start discovery,
+  resume assessments, research a saved shortlist, and review contacts/evidence.
+  Save user edits as separate review JSON; never overwrite generated evidence or
+  send messages. No accounts, remote hosting, resume ingestion, or billing changes.
+  Same-origin requests plus a per-server token protect writes. Only known run
+  directories are readable. This local UI is not a multi-user deployment.
+
+- 2026-10-01: Research recovery: reject LinkedIn-targeted queries before Tavily;
+  give model actionable validation feedback on retry. A premature contact citing
+  a discovered but unread page triggers a read, never acceptance from snippets.
+  Failed extraction retries once, then marks that URL unavailable and continues
+  to other discovered sources within the same budgets. Provider/validation
+  failures with no eventual contact remain failed, not successful no-contact.
+  All corrections/errors remain in trace. No drafting or sending changes.
+
+- 2026-10-01: Prevent premature no-contact outcomes. If the model proposes none,
+  the controller first performs a company-wide people search (no location or
+  exact-title restriction), then inspects up to two distinct discovered pages,
+  prioritizing directory paths, within existing budgets. Broaden an unsuccessful
+  location-specific search before allowing none. Record model proposals and
+  controller overrides separately. No-result searches may finish without page
+  reads. Budget limits and provider failures remain explicit; no invented contact.
+
+- 2026-10-01: Connect saved shortlist -> bounded public-contact research ->
+  personalized draft in agent.shortlist_outreach. Default all shortlisted jobs;
+  --ranks selects positions for testing. No discovery/reclassification/ranking.
+  Each job permits 3 search requests, 5 extraction requests, and 12 research
+  model requests, including retries. Cached section reads consume model steps
+  but no web calls. Shared Gemini pacing and bounded quota retry across jobs.
+  Exhausted provider failures skip the job; genuine no-contact/budget exhaustion
+  uses hiring-team fallback. Persist research actions, pages, excerpts and errors.
+- 2026-10-01: Relevant role plus supported company affiliation suffices for a
+  contact; specific opening ownership/referral ability is optional and never
+  assumed. Model claims require exact excerpts from inspected sections, covering
+  name, title and organization; validate provenance mechanically, retain human
+  review for semantic accuracy. No invented contacts, email guessing, LinkedIn
+  fetching, attribution of marketing articles to featured staff, or automatic
+  sending. Named drafts ask employees about a possible referral and recruiters
+  about the role or correct colleague. Do not guess unnamed client employers.
+  Offline synthetic contact/drafting evals precede live two-company validation.
+
+- 2026-10-01: Preserve all text returned by page extraction in local evidence;
+  do not silently cut at 16000 characters. This does not guarantee the provider
+  extracted the whole webpage. Supply numbered 4000-character sections with
+  offsets, and bounded keyword-selected previews. Prefer About/People/Team
+  directory URLs over services/articles when choosing the probe's two pages.
+  Selection remains a transparent heuristic, not contact verification. No new
+  calls, autonomous loop, or drafting changes. Legacy truncated artifacts require
+  fetching again to recover discarded text.
+
+- 2026-10-01: Start public-web contact research with Tavily search/extract using
+  TAVILY_API_KEY. First slice is an evidence probe, not autonomous contact
+  selection or personalized drafting. Search sends only a company/role query;
+  extraction reads public URLs returned by that search. No profile sent to the
+  search provider, guessed emails, LinkedIn scraping, or sending. Basic search
+  and extraction only; no automatic provider fallback or billing changes.
+  Probe retries once, logs failures, and saves evidence under ignored drafts/.
+  Search snippets are leads, not verified employment/contact claims.
+- 2026-10-01: Research result contract: status, actual-employer assessment,
+  contact name/title/organization/public URL, employee/recruiter relationship,
+  evidence excerpts and source URLs, uncertainty, and reason for selection.
+  No contact is a valid outcome distinct from provider failure. Later bounded
+  research loop permits three search attempts and five page-read attempts
+  (including retries), with a separate model-call cap. Confirm recruiter versus
+  employer before seeking referrals; unnamed clients stay unknown. Contact
+  evidence must come from inspected pages and remain reviewable. This slice
+  does not change drafting or wire research into the main CLI yet.
+
+- 2026-10-01: CLI workflows pace Gemini request starts at a configurable
+  --gemini-rpm (positive integer, default 10), shared across classification,
+  ranking, drafting and retries within one run. First call starts immediately;
+  elapsed request/retry-wait time counts toward spacing. Local saves/search and
+  reused decisions do not consume slots. This conservative default is not a
+  claim about provider quota; concurrent processes and token/day limits remain
+  outside this per-run limiter. Record the setting without changing assessment
+  compatibility. Existing bounded quota retry/stop remains the fallback.
+
+- 2026-09-30: Add --resume-results, distinct from reassessment: retain validated
+  decisions, retry failed/pending classifications, then rerank in a new directory.
+  Record a profile/classifier fingerprint for new runs and reject mismatches;
+  legacy reports lack this evidence, so warn explicitly and assume the current
+  profile matches for recovery. Resume supports classification/ranking recovery;
+  reject --draft on resume to avoid duplicating previously generated messages.
+  Save every posting before classification so interruptions remain recoverable.
+  max-jobs caps the candidate set, not the number of new calls.
+- 2026-09-30: Gemini 429 is a shared provider failure, not a per-job rejection.
+  Record sanitized quota identifiers and retry timing. Respect Retry-After or
+  RetryInfo: retry once after at most 60 seconds, default 30 if unspecified;
+  longer waits or persistent 429 end with quota_limited, retaining progress.
+  No subsequent job/ranking calls after persistent quota failure. Counts separate
+  attempted, successful assessments, failures and pending jobs. Ordinary errors
+  retain retry-once/skip behavior. No prompt or drafting-content changes.
+
+- 2026-09-30: Ranking explanations must compare against another supplied role,
+  citing a material evidence difference or acknowledging a near tie. Preserve
+  exact experience scope; posting requirements are never candidate achievements.
+  Display one fit assessment and a separate comparative rationale.
+  Add --from-results to reassess saved postings with the current profile and
+  prompts, without JSearch. Reclassify rather than reuse stale decisions; save a
+  new run with source provenance and leave the source untouched. The max-jobs
+  cap still applies. Invalid/incomplete saved posting data fails before API calls.
+
+- 2026-09-30: Broader discovery uses a deduplicated role/location query grid,
+  location-major order, within --max-search-requests (default 4, including
+  retries). Each query fetches one page; Remote uses work_from_home=true with
+  the explicit profile search_country (default ca). Log truncated coverage and
+  query failures, retain successful batches, and interleave batches before
+  --max-jobs (default 10). Deduplicate by provider job ID or exact apply URL;
+  do not collapse distinct postings just because title/company match.
+- 2026-09-30: Optional seniority_preferences, employment_preferences, and
+  work_arrangements describe acceptable options; empty lists mean unspecified.
+  Explicit conflicts reject; missing data remains unknown. Preferences never
+  become claims about qualifications. Existing YAML profiles remain valid.
+- 2026-09-30: After individual classification, one comparative Gemini call ranks
+  all relevant assessed jobs using full postings/profile and fit reasons. Return
+  every candidate exactly once by locally assigned ID with an evidence-based
+  ranking explanation. Validate IDs/duplicates/completeness; keep top --top-k
+  (default 3), generate drafts only when --draft is supplied. Ranking failure
+  after one retry retains assessments and saves no misleading ordered shortlist.
+  Shortlist ranks only assessed results, not all jobs on the market. Save full
+  JSON and readable shortlist Markdown. Include search coverage and count
+  skipped/unassessed jobs. Regression tests use mocks; separate opt-in live
+  synthetic cases assess prompt behavior without claiming model accuracy from mocks.
 
 - 2026-09-30: Distinguish recruiting agencies from actual employers using
   explicit posting text. When recruiting for a client, say "the role you're

@@ -1,6 +1,10 @@
 # Your profile — the agent drafts only from what's here.
 # Copy this file to profile.yaml and fill it in. Never invent experience:
-# v0.1 uses only the explicit experience bullets below.
+# Explicit facts may be grouped below or kept in experience_bullets.
+work_experience: [] # Each role: title, company, start_date, end_date, achievements.
+projects: []
+education: []
+skills: []
 
 name: "Your Name"
 email: "you@example.com"
@@ -18,6 +22,15 @@ target_roles:
 locations:
   - "Toronto, ON"
   - "Remote"
+
+# Country scope for searches (including remote). Not a work-authorization claim.
+search_country: "ca"
+
+# Optional acceptable options. Empty means no preference; choose your own values.
+# Examples: ["junior", "mid-level"], ["permanent"], ["remote", "hybrid"].
+seniority_preferences: []
+employment_preferences: []
+work_arrangements: []
 
 # Concrete experience bullets the agent may draw on when drafting.
 # Keep each one to a single verifiable fact.

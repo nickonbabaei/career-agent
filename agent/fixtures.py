@@ -1,7 +1,7 @@
 """Explicitly load fictional jobs for offline development; never calls an API."""
 
 import json
-from dataclasses import fields
+from dataclasses import fields, MISSING
 from pathlib import Path
 
 from agent.models import JobPosting
@@ -14,8 +14,8 @@ class FixtureError(ValueError):
 def load_sample_jobs(path: str | Path) -> list[JobPosting]:
     """Read a JSON fixture path and return all its fictional jobs, unfiltered.
 
-    Expects {"fictional": true, "jobs": [...]} with all JobPosting fields as
-    nonempty strings. An empty jobs list is valid. Raises FixtureError for file,
+    Expects {"fictional": true, "jobs": [...]} with required JobPosting fields as
+    nonempty strings; provider_id is optional. An empty jobs list is valid. Raises FixtureError for file,
     JSON, or schema errors; no retries or network fallback. Relative paths use
     the working directory. The fictional marker is required to identify samples.
     """
@@ -29,10 +29,11 @@ def load_sample_jobs(path: str | Path) -> list[JobPosting]:
     if data["fictional"] is not True or not isinstance(data["jobs"], list):
         raise FixtureError("Fixture requires fictional: true and a jobs list.")
 
-    required = {item.name for item in fields(JobPosting)}
+    required = {item.name for item in fields(JobPosting) if item.default is MISSING}
+    allowed = {item.name for item in fields(JobPosting)}
     jobs = []
     for index, row in enumerate(data["jobs"], start=1):
-        if not isinstance(row, dict) or set(row) != required:
+        if not isinstance(row, dict) or not required <= set(row) or not set(row) <= allowed:
             raise FixtureError(f"Sample job {index} must contain all JobPosting fields only.")
         if any(not isinstance(value, str) or not value.strip() for value in row.values()):
             raise FixtureError(f"Sample job {index} fields must be nonempty strings.")
