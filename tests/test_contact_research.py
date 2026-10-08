@@ -34,6 +34,49 @@ def finish(p, company, name):
 
 
 class ContactResearchTests(unittest.TestCase):
+    def test_whitespace_citation_returns_original_source(self):
+        p = page('Alpha', 'Alex Example')
+        a = finish(p, 'Alpha', 'Alex Example')
+        a['evidence'][0]['excerpt'] = ' '.join(p['text'].split())
+        contact = validate_contact(a, [p])
+        self.assertEqual(contact['evidence'][0]['excerpt'], p['text'])
+        a['evidence'][0]['excerpt'] = 'Alpha Alex Example - Senior AI Engineer Works on AI systems.'
+        with self.assertRaises(ResearchError):
+            validate_contact(a, [p])
+
+    def test_cached_unread_quote_requires_section_inspection(self):
+        p = page('Alpha', 'Alex Example')
+        quote = p['text']
+        p['text'] = 'x' * 12000 + quote
+        p['sections'] = section_index(p['text'])
+        a = finish(p, 'Alpha', 'Alex Example')
+        a['evidence'][0]['excerpt'] = quote
+        job = JobPosting('Engineer', 'Alpha', 'Toronto', 'Build', 'https://alpha.example/job')
+        trace = {}
+        actions = [action('search', query='Alpha team'), action('read', url=p['url']), a, a]
+        with patch('agent.contact_research.model_json', side_effect=actions), patch('agent.contact_research.search_web', return_value=[{'url':p['url']}]), patch('agent.contact_research.read_page', return_value=p), patch('agent.research_runtime.time.sleep'):
+            self.assertEqual(research_contact(job, Runtime(), trace)['name'], 'Alex Example')
+        self.assertEqual(trace['overrides'][-1]['executed']['action'], 'section')
+        self.assertEqual(trace['counts']['read'], 1)
+
+    def test_recovered_503_can_finish_without_contact(self):
+        from agent.research_runtime import ServiceUnavailable
+        job = JobPosting('Engineer', 'Alpha', 'Toronto', 'Build', 'https://alpha.example/job')
+        trace = {}
+        actions = [ServiceUnavailable(), action('none', reason='No evidence'), action('none', reason='No evidence')]
+        with patch('agent.contact_research.model_json', side_effect=actions), patch('agent.contact_research.search_web', return_value=[]), patch('agent.research_runtime.time.sleep'):
+            self.assertIsNone(research_contact(job, Runtime(), trace))
+        self.assertEqual(trace['status'], 'no_verified_contact')
+        self.assertEqual(len(trace['errors']), 1)
+
+    def test_unrecovered_page_failure_cannot_be_no_contact(self):
+        from agent.research_tools import ResearchToolError
+        job = JobPosting('Engineer', 'Alpha', 'Toronto', 'Build', 'https://alpha.example/job')
+        trace = {}
+        with patch('agent.contact_research.model_json', return_value=action('none', reason='No evidence')), patch('agent.contact_research.search_web', return_value=[{'url':'https://alpha.example/team'}]), patch('agent.contact_research.read_page', side_effect=ResearchToolError('Empty')), patch('agent.research_runtime.time.sleep'):
+            with self.assertRaisesRegex(ResearchError, 'unrecovered'):
+                research_contact(job, Runtime(), trace)
+
     def test_unread_finish_reads_source_before_accepting(self):
         p = page('Alpha', 'Alex Example')
         job = JobPosting('Engineer', 'Alpha', 'Toronto', 'Build', 'https://alpha.example/job')
@@ -59,13 +102,12 @@ class ContactResearchTests(unittest.TestCase):
     def test_linkedin_query_rejected_with_feedback_before_web_call(self):
         job = JobPosting('Engineer', 'Alpha', 'Toronto', 'Build', 'https://alpha.example/job')
         trace = {}
-        def model(prompt, context, schema):
+        def model(prompt, context, schema, **kwargs):
             if not context['validation_feedback']:
                 return action('search', query='site:linkedin.com Alpha')
             return action('none', reason='No evidence')
         with patch('agent.contact_research.model_json', side_effect=model), patch('agent.contact_research.search_web', return_value=[]) as search, patch('agent.research_runtime.time.sleep'):
-            with self.assertRaises(ResearchError):
-                research_contact(job, Runtime(), trace)
+            self.assertIsNone(research_contact(job, Runtime(), trace))
         self.assertNotIn('linkedin', search.call_args.args[0])
         self.assertTrue(trace['validation_feedback'])
 

@@ -59,8 +59,11 @@ def start_run(data):
             source = run_dir(data.get('run')) / 'results.json'
             if mode == 'research':
                 from agent.shortlist_outreach import selected_jobs
-                selected_jobs(source)
-                command += ['agent.shortlist_outreach', '--results', str(source)]
+                ids = data.get('job_ids')
+                if ids is None:
+                    raise ValueError('Select jobs to pursue first.')
+                selected_jobs(source, job_ids=ids)
+                command += ['agent.shortlist_outreach', '--results', str(source), '--job-ids', *map(str, ids)]
                 required += ['TAVILY_API_KEY']
             else:
                 command += ['agent.cli', '--resume-results', str(source), '--max-jobs', '100']
@@ -126,7 +129,8 @@ class Handler(BaseHTTPRequestHandler):
                 directory = run_dir(parse_qs(url.query).get('run', [''])[0])
                 report = read_json(directory / 'results.json')
                 edits = directory / 'review-edits.json'
-                return self.reply({'report': report, 'edits': read_json(edits) if edits.exists() else {}})
+                selection = directory / 'selection.json'
+                return self.reply({'report': report, 'edits': read_json(edits) if edits.exists() else {}, 'selection': read_json(selection) if selection.exists() else None})
             return self.reply({'error': 'Not found'}, 404)
         except (ValueError, OSError) as error:
             return self.reply({'error': str(error)}, 400)
@@ -148,6 +152,18 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == '/api/keys':
                 with LOCK:
                     save_keys(data)
+            elif self.path == '/api/selection':
+                directory = run_dir(data.get('run'))
+                ids = data.get('job_ids')
+                if not isinstance(ids, list):
+                    raise ValueError('Expected selected job IDs.')
+                if ids:
+                    from agent.shortlist_outreach import selected_jobs
+                    selected_jobs(directory / 'results.json', job_ids=ids)
+                with LOCK:
+                    temporary = directory / 'selection.json.tmp'
+                    temporary.write_text(json.dumps(ids))
+                    temporary.replace(directory / 'selection.json')
             elif self.path == '/api/profile':
                 with LOCK:
                     if PROCESS is not None and PROCESS.poll() is None:

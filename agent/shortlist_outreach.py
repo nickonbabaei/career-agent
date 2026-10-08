@@ -17,10 +17,17 @@ from agent.drafting import draft_outreach, DraftingError
 from agent.storage import save_draft, DraftSaveError
 
 
-def selected_jobs(path, ranks=None):
+def selected_jobs(path, ranks=None, job_ids=None):
     """Validate saved shortlist references before network calls; return rank/job pairs."""
     load_saved_jobs(path)
     report = json.loads(Path(path).read_text(encoding='utf-8'))
+    if job_ids is not None:
+        if ranks is not None or not isinstance(job_ids, list) or not job_ids or any(type(i) is not int for i in job_ids) or len(set(job_ids)) != len(job_ids):
+            raise ValueError('Choose distinct assessed job IDs, without ranks.')
+        entries = {e['id']: e for e in report['jobs']}
+        if len(entries) != len(report['jobs']) or any(i not in entries or type(entries[i].get('decision', {}).get('is_relevant')) is not bool for i in job_ids):
+            raise ValueError('Selection must reference successfully assessed jobs.')
+        return [(i, JobPosting(**entries[i]['job'])) for i in job_ids]
     shortlist = report.get('shortlist')
     if not isinstance(shortlist, list) or not shortlist:
         raise ValueError('Saved report has no shortlist.')
@@ -44,8 +51,8 @@ def selected_jobs(path, ranks=None):
     return [(r, JobPosting(**entries[ids[r - 1]]['job'])) for r in ranks]
 
 
-def run(path, profile, ranks=None, rpm=10):
-    jobs = selected_jobs(path, ranks)
+def run(path, profile, ranks=None, rpm=10, job_ids=None):
+    jobs = selected_jobs(path, ranks, job_ids)
     runtime = Runtime(rpm)
     for key in ('GEMINI_API_KEY', 'TAVILY_API_KEY'):
         if not os.environ.get(key, '').strip():
@@ -54,6 +61,7 @@ def run(path, profile, ranks=None, rpm=10):
     directory.mkdir(parents=True)
     report = {'created_at': datetime.now(timezone.utc).isoformat(), 'source_results': str(Path(path).resolve()),
               'status': 'running', 'gemini_rpm': rpm, 'jobs': [], 'nothing_sent': True}
+    report['selection_kind'] = 'job_ids' if job_ids is not None else 'shortlist_ranks'
     def persist():
         temporary = directory / 'results.json.tmp'
         temporary.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -120,10 +128,11 @@ def main():
     parser.add_argument('--results', required=True)
     parser.add_argument('--profile', default='profile/profile.yaml')
     parser.add_argument('--ranks', nargs='+', type=positive_integer, help='Shortlist positions; default all')
+    parser.add_argument('--job-ids', nargs='+', type=positive_integer, help='Explicit assessed job selection instead of shortlist ranks')
     parser.add_argument('--gemini-rpm', type=positive_integer, default=10)
     args = parser.parse_args()
     try:
-        directory, report = run(args.results, load_profile(args.profile), args.ranks, args.gemini_rpm)
+        directory, report = run(args.results, load_profile(args.profile), args.ranks, args.gemini_rpm, args.job_ids)
     except (ValueError, OSError) as error:
         parser.exit(1, f'Stopped: {error}\n')
     print(f"Status: {report['status']}\nReview: {directory / 'review.md'}\nNothing sent.")

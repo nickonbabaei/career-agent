@@ -1,5 +1,6 @@
 """Bounded search/read/inspect/select loop; never sends messages."""
 from dataclasses import asdict
+import re
 from agent.research_tools import search_web, read_page, read_section, contact_sections, prioritize_pages, ResearchToolError
 from agent.research_runtime import model_json, ResearchError, BudgetExhausted
 
@@ -29,6 +30,7 @@ query; read/section set url; section uses a listed section_id. Stop with none wh
 no supported contact is found. Respect remaining budgets; finish before model
 budget runs out. Explain absence or uncertainties in reason.'''
 STR = {'type': 'string'}
+RESEARCH_MODEL = 'gemini-3.1-flash-lite'
 FIELDS = {k: STR for k in ('query', 'url', 'reason', 'name', 'title', 'organization', 'relationship', 'public_url')}
 SCHEMA = {'type': 'object', 'properties': {
     'action': {'type': 'string', 'enum': ['search', 'read', 'section', 'finish', 'none']},
@@ -51,6 +53,15 @@ def validate_action(value):
     return value
 
 
+def source_quote(quote, text):
+    """Match literal words/punctuation with flexible whitespace; return source text."""
+    parts = re.split(r'\s+', quote.strip())
+    if not parts or not quote.strip():
+        return None
+    match = re.search(r'\s+'.join(re.escape(p) for p in parts), text)
+    return match.group(0) if match else None
+
+
 def validate_contact(action, inspected):
     """Validate exact excerpt provenance; semantic support still needs review."""
     for key in ('name', 'title', 'organization', 'public_url', 'reason'):
@@ -59,6 +70,7 @@ def validate_contact(action, inspected):
     if action['relationship'] not in ('employee', 'recruiter') or not action['evidence']:
         raise ResearchError('Contact requires relationship and inspected evidence.')
     quotes = []
+    verified = []
     urls = set()
     for evidence in action['evidence']:
         if not isinstance(evidence, dict) or set(evidence) != {'url', 'excerpt'}:
@@ -66,16 +78,19 @@ def validate_contact(action, inspected):
         url, quote = evidence['url'], evidence['excerpt']
         if not isinstance(url, str) or not isinstance(quote, str) or not quote.strip():
             raise ResearchError('Invalid evidence strings.')
-        if not any(s['url'] == url and quote in s['text'] for s in inspected):
-            raise ResearchError('Contact cites text not inspected.')
+        original = next((matched for s in inspected if s['url'] == url
+                         if (matched := source_quote(quote, s['text'])) is not None), None)
+        if original is None:
+            raise ResearchError(f'Contact cites text not inspected at {url}. Copy a contiguous excerpt from an inspected section exactly; do not paraphrase or join separate passages.')
         urls.add(url)
-        quotes.append(quote)
+        quotes.append(original)
+        verified.append({'url': url, 'excerpt': original})
     combined = ' '.join(' '.join(quotes).casefold().split())
     if any(' '.join(action[k].casefold().split()) not in combined for k in ('name', 'title', 'organization')):
         raise ResearchError('Evidence must explicitly include name, title and organization.')
     if action['public_url'] not in urls:
         raise ResearchError('Public URL must be a cited page.')
-    return {k: action[k] for k in ('name', 'title', 'organization', 'relationship', 'public_url', 'reason', 'uncertainties', 'evidence')}
+    return {**{k: action[k] for k in ('name', 'title', 'organization', 'relationship', 'public_url', 'reason', 'uncertainties')}, 'evidence': verified}
 
 
 def required_before_none(job, trace, limits):
@@ -102,7 +117,7 @@ def research_contact(job, runtime, trace, persist=lambda: None):
     <=3 searches, <=5 extractions, <=12 model attempts including retries.
     Budget exhaustion/no contact returns None; provider errors skip job upstream.
     """
-    trace.update(job=asdict(job), searches=[], pages=[], inspected=[], actions=[], overrides=[], errors=[], validation_feedback=[], failed_urls=[],
+    trace.update(job=asdict(job), model=RESEARCH_MODEL, searches=[], pages=[], inspected=[], actions=[], rejected_actions=[], overrides=[], errors=[], validation_feedback=[], failed_urls=[],
                  counts={'search': 0, 'read': 0, 'model': 0}, status='researching', contact=None)
     limits = {'search': 3, 'read': 5, 'model': 12}
     def consume(kind):
@@ -118,7 +133,7 @@ def research_contact(job, runtime, trace, persist=lambda: None):
                        'recent_actions': trace['actions'][-3:], 'controller_overrides': trace['overrides'][-3:],
                        'validation_feedback': trace['validation_feedback'], 'failed_urls': trace['failed_urls']}
             def decide_validated():
-                action = validate_action(model_json(PROMPT, context, SCHEMA))
+                action = validate_action(model_json(PROMPT, context, SCHEMA, model=RESEARCH_MODEL))
                 if action['action'] == 'search' and not 1 <= len(action['query'].strip()) <= 400:
                     raise ResearchError('Search query must contain 1-400 characters.')
                 if action['action'] == 'search' and 'linkedin' in action['query'].casefold():
@@ -145,7 +160,26 @@ def research_contact(job, runtime, trace, persist=lambda: None):
                                        'reason': 'Inspect cited source before selecting contact.'}
                         trace['overrides'].append({'proposed': action, 'executed': replacement})
                         return replacement
-                    validate_contact(action, trace['inspected'])
+                    for evidence in action['evidence']:
+                        if not isinstance(evidence, dict) or not isinstance(evidence.get('excerpt'), str):
+                            continue
+                        page = next((p for p in trace['pages'] if p['url'] == evidence.get('url')), None)
+                        if page is None:
+                            continue
+                        seen = {s['id'] for s in trace['inspected'] if s['url'] == page['url']}
+                        for section in page['sections']:
+                            if section['id'] in seen:
+                                continue
+                            text = read_section(page, section['id'])['text']
+                            if source_quote(evidence['excerpt'], text):
+                                replacement = {'action': 'section', 'url': page['url'], 'section_id': section['id'], 'reason': 'Inspect cited cached section before contact selection.'}
+                                trace['overrides'].append({'proposed': action, 'executed': replacement})
+                                return replacement
+                    try:
+                        validate_contact(action, trace['inspected'])
+                    except ResearchError as error:
+                        trace['rejected_actions'].append({'action': action, 'reason': str(error)})
+                        raise
                 return action
             def decide():
                 try:
@@ -171,8 +205,8 @@ def research_contact(job, runtime, trace, persist=lambda: None):
                 trace.update(status='contact_found', contact=validate_contact(action, trace['inspected']))
                 return trace['contact']
             if kind == 'none':
-                if trace['errors']:
-                    raise ResearchError('Research ended without a contact after errors; inspect trace.')
+                if trace['failed_urls']:
+                    raise ResearchError('Research ended without a contact after unrecovered page failures; inspect trace.')
                 trace.update(status='no_verified_contact', reason=action['reason'])
                 return None
             if kind == 'search':

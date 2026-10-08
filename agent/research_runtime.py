@@ -10,6 +10,12 @@ class ResearchError(RuntimeError):
     pass
 
 
+class ServiceUnavailable(ResearchError):
+    def __init__(self, delay=15):
+        self.delay = delay
+        super().__init__('Gemini is temporarily unavailable (503). Try these selected jobs again later from the saved search; your profile and job assessments are preserved.')
+
+
 class BudgetExhausted(ResearchError):
     pass
 
@@ -46,16 +52,21 @@ class Runtime:
                 errors.append({'stage': stage, 'attempt': attempt, 'message': str(error)})
                 if attempt == 2:
                     raise
+                if isinstance(error, ServiceUnavailable):
+                    if error.delay > 60:
+                        raise
+                    print(f'Gemini temporarily unavailable; waiting {error.delay:g}s before one retry.')
+                    time.sleep(error.delay)
 
 
-def model_json(prompt, context, schema, *, api_key=None, max_output_tokens=2400):
+def model_json(prompt, context, schema, *, api_key=None, max_output_tokens=2400, model='gemini-3.5-flash-lite'):
     """One structured Gemini request. Caller owns pacing/budget/retries."""
     key = (api_key if api_key is not None else os.environ.get('GEMINI_API_KEY', '')).strip()
     if not key:
         raise ValueError('Set GEMINI_API_KEY.')
     try:
         response = requests.post(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
+            f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
             headers={'x-goog-api-key': key}, timeout=60,
             json={'systemInstruction': {'parts': [{'text': prompt}]},
                   'contents': [{'role': 'user', 'parts': [{'text': json.dumps(context)}]}],
@@ -66,6 +77,9 @@ def model_json(prompt, context, schema, *, api_key=None, max_output_tokens=2400)
         if error.response is not None and error.response.status_code == 429:
             raise quota_error(error.response) from error
         status = error.response.status_code if error.response is not None else 'connection/timeout'
+        if status == 503:
+            delay = quota_error(error.response).details.get('retry_after_seconds', 15)
+            raise ServiceUnavailable(delay) from error
         raise ResearchError(f'Gemini research failed ({status}).') from error
     try:
         payload = response.json()

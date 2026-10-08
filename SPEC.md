@@ -95,6 +95,36 @@ _TODO — to be spec'd. Draft direction:_
 
 ## Decisions log
 
+- 2026-10-08: Contact citation recovery records rejected model actions and
+  identifies the offending URL/excerpt. Accept whitespace-only differences while
+  retaining the exact original source excerpt; never accept paraphrases. If a
+  quote exists in a cached but unread section, inspect that section before asking
+  for a corrected selection. Keep retry/model budgets and provenance checks.
+
+- 2026-10-08: After repeated live 3.5 Flash-Lite 503s, user-authorized alternative
+  gemini-3.1-flash-lite passed minimal and research-schema probes. Use it for
+  contact research only, record model in trace. Other stages retain existing
+  model. No automatic fallback or billing changes; free usage requires a free
+  project and available quota. This supersedes today's initial no-switch decision.
+
+- 2026-10-08: Live diagnostics found intermittent Gemini 503s on otherwise
+  successful request shapes. A recovered model/validation retry must not turn
+  a later completed no-contact decision into a failed role. Preserve retry errors
+  in the trace; no-contact remains failed if page extraction exhausted retries.
+  No model switch: identical initial research requests succeeded with current model.
+
+- 2026-10-08: Gemini research 503 is a temporary provider failure. Keep one
+  retry per operation, but wait 15 seconds before retrying (or honor supplied
+  Retry-After up to 60 seconds; longer delays skip retry). Give an actionable
+  message without suggesting invalid keys, no-contact, or poor job fit.
+
+- 2026-10-08: First guided-UI slice: profile summary -> assessed job selection
+  -> existing research/drafting -> review. Show all assessed jobs, recommend and
+  initially select top three, allow explicit override of no-fit judgments. Persist
+  selection per search run, reject empty/duplicate/unassessed IDs before calls.
+  Carry original job IDs into outreach; do not mutate ranking. Contact approval
+  between research and drafting remains the next slice, not represented as live.
+
 - 2026-10-08: Add consent-labelled PDF resume import to local UI. Extract text
   with pypdf (5 MB, 10 pages, 40k characters maximum; encrypted/scanned/empty
   pages rejected without model calls). Send extracted text to Gemini for a

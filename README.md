@@ -74,6 +74,14 @@ and what's still open.
 
 ### Local browser UI
 
+The guided flow begins with a profile summary and a job-choice screen. All
+successfully assessed jobs are available, including model-rejected jobs you may
+explicitly choose anyway. Top picks are preselected on first viewing. Checkbox
+choices persist per run in selection.json; empty selections cannot launch outreach.
+Research/drafting receives only selected original job IDs and does not alter ranking.
+Research and drafting still run together in this first slice; contact approval
+between those steps is not implemented yet. Past runs live in a collapsed history.
+
 On macOS, double-click **Start Career Desk.command** in the project folder.
 It uses the existing virtual environment and opens your browser. Keep its window
 open while using the app; Ctrl+C stops the server. No activation or key exports
@@ -440,6 +448,11 @@ itself omit content; preserving its response does not prove webpage completeness
 Old truncated files cannot recover discarded text without fetching again.
 
 ## Research contacts and draft from a saved shortlist
+
+Contact research uses `gemini-3.1-flash-lite` after repeated 503 failures on
+3.5 Flash-Lite. Other model stages remain unchanged. Research traces record the
+model used. Recovered retries remain logged but do not invalidate a subsequent
+no-contact result; exhausted page failures still remain failures.
 
 With GEMINI_API_KEY and TAVILY_API_KEY exported in the same activated terminal:
 
