@@ -93,6 +93,16 @@ achievements); use Move up to put recent roles first. Projects, education, and
 skills have separate sections. Older profiles still load: their original bullets
 appear under Additional background until organized. Structured achievements carry
 their role/date context into model inputs. Changed profiles require fresh assessment.
+
+Inside the profile form, choose a resume PDF and consent to sending its extracted
+text to Gemini, then click **Extract & preview profile**. Review the proposed
+background, confirm target roles/locations, and Save profile to commit it. Cancel
+leaves the saved profile untouched. Import replaces background rather than merging
+old achievements; preferences and drafting restrictions are preserved. PDFs remain
+in memory and are not stored. Limits: 5 MB, 10 pages, 40,000 text characters;
+encrypted or scanned/empty pages require a new text-based export (no OCR yet).
+Install updated requirements before restarting the server. A model call plus at
+most one retry uses Gemini quota; this feature does not change model billing.
 It starts a background search,
 shows saved shortlists, and researches contacts/drafts from a selected shortlist.
 Resume assessments is available for interrupted search runs. Research reruns

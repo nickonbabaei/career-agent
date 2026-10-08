@@ -95,6 +95,14 @@ _TODO — to be spec'd. Draft direction:_
 
 ## Decisions log
 
+- 2026-10-08: Add consent-labelled PDF resume import to local UI. Extract text
+  with pypdf (5 MB, 10 pages, 40k characters maximum; encrypted/scanned/empty
+  pages rejected without model calls). Send extracted text to Gemini for a
+  structured proposed background, with one retry on provider/output failure.
+  Upload bytes are memory-only and never served or persisted. Preview replaces
+  background only after user saves; preserve preferences and constraints. No
+  inferred target roles, tenure, metrics, or experience. No agent loop or OCR.
+
 - 2026-10-07: Add work_experience records (title, company, start_date, end_date,
   achievements), plus projects, education, and skills lists. Keep legacy
   experience_bullets as uncategorized facts for lossless compatibility. At least

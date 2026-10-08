@@ -134,6 +134,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed(write=True):
             return self.reply({'error': 'Invalid local request. Reload the page.'}, 403)
+        if self.path == '/api/resume':
+            return self.import_resume()
         try:
             size = int(self.headers.get('Content-Length', '0'))
             if not 0 < size <= 200000:
@@ -184,6 +186,30 @@ class Handler(BaseHTTPRequestHandler):
             self.reply({'error': str(error)}, 409)
         except (ValueError, OSError) as error:
             self.reply({'error': str(error)}, 400)
+
+    def import_resume(self):
+        from agent.resume import propose_background, MAX_BYTES
+        from agent.research_runtime import ResearchError
+        from agent.quota import QuotaError
+        if not LOCK.acquire(blocking=False):
+            return self.reply({'error': 'Another operation is active. Try again shortly.'}, 409)
+        try:
+            if PROCESS is not None and PROCESS.poll() is None:
+                raise ValueError('Wait for the active run before importing a resume.')
+            if self.headers.get('X-Resume-Consent') != 'yes':
+                raise ValueError('Confirm sending resume text to Gemini before processing.')
+            size = int(self.headers.get('Content-Length', '0'))
+            if not 0 < size <= MAX_BYTES:
+                raise ValueError('Upload a PDF under 5 MB.')
+            key = worker_environment().get('GEMINI_API_KEY', '').strip()
+            if not key:
+                raise ValueError('Add your Gemini key in API setup first.')
+            result = propose_background(self.rfile.read(size), key)
+            self.reply(result)
+        except (ValueError, ResearchError, QuotaError) as error:
+            self.reply({'error': str(error)}, 400)
+        finally:
+            LOCK.release()
 
 
 def main():

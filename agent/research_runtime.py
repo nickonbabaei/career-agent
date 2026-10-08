@@ -48,9 +48,9 @@ class Runtime:
                     raise
 
 
-def model_json(prompt, context, schema):
+def model_json(prompt, context, schema, *, api_key=None, max_output_tokens=2400):
     """One structured Gemini request. Caller owns pacing/budget/retries."""
-    key = os.environ.get('GEMINI_API_KEY', '').strip()
+    key = (api_key if api_key is not None else os.environ.get('GEMINI_API_KEY', '')).strip()
     if not key:
         raise ValueError('Set GEMINI_API_KEY.')
     try:
@@ -60,7 +60,7 @@ def model_json(prompt, context, schema):
             json={'systemInstruction': {'parts': [{'text': prompt}]},
                   'contents': [{'role': 'user', 'parts': [{'text': json.dumps(context)}]}],
                   'generationConfig': {'responseMimeType': 'application/json',
-                                       'responseJsonSchema': schema, 'maxOutputTokens': 2400}})
+                                       'responseJsonSchema': schema, 'maxOutputTokens': max_output_tokens}})
         response.raise_for_status()
     except requests.RequestException as error:
         if error.response is not None and error.response.status_code == 429:
