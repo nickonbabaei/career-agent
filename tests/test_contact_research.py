@@ -34,6 +34,23 @@ def finish(p, company, name):
 
 
 class ContactResearchTests(unittest.TestCase):
+    def test_founder_relationship_has_actionable_validation(self):
+        p = page('Alpha', 'Alex Example')
+        proposed = finish(p, 'Alpha', 'Alex Example')
+        proposed['relationship'] = 'Founding Team'
+        with self.assertRaisesRegex(ResearchError, 'employee or recruiter'):
+            validate_contact(proposed, [p])
+        self.assertNotIn('Founding Team', SCHEMA['properties']['relationship']['enum'])
+
+    def test_no_contact_does_not_publish_unsupported_company_claims(self):
+        job = JobPosting('Engineer', 'Alpha', 'Toronto', 'Build', 'https://alpha.example/job')
+        trace = {}
+        with patch('agent.contact_research.model_json', return_value=action('none', reason='Company has no employees.')), patch('agent.contact_research.search_web', return_value=[]), patch('agent.research_runtime.time.sleep'):
+            research_contact(job, Runtime(), trace)
+        self.assertNotIn('no employees', trace['reason'])
+        self.assertIn('1 searches', trace['reason'])
+        self.assertEqual(trace['model_reason'], 'Company has no employees.')
+
     def test_whitespace_citation_returns_original_source(self):
         p = page('Alpha', 'Alex Example')
         a = finish(p, 'Alpha', 'Alex Example')

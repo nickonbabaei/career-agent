@@ -74,13 +74,36 @@ and what's still open.
 
 ### Local browser UI
 
+**Find opportunities** is the default automatic path: confirm the profile, then
+search and assess up to the configured job limit (30 by default), rank matches,
+vet/research the top three, and prepare drafts only for supported named contacts.
+The final view groups contacts/drafts, direct applications, unresearched matches,
+errors and flagged listings. Expand groups to browse; **Research the next three**
+uses the saved ranking without repeating discovery. Draft edits carry forward.
+No contact availability changes fit ranking. Nothing sends. Existing search and
+contact review controls remain accessible through manual controls and run history.
+
+Manual UI research stops at **Review contacts**. Choose the researched person, supply
+and confirm your own contact, or skip outreach and open the application link.
+Choices persist per run. Click **Create drafts for chosen recipients** to start a
+separate drafting run without repeating research. Manual contacts are labelled
+user supplied and not independently verified. Failed research remains visible;
+only an explicitly confirmed manual contact can proceed without a supported contact.
+Before contact research, two bounded web searches check company identity and the
+specific listing against inspected official sources. Routine checks stay in saved
+traces, not the UI. Missing evidence or an absent city does not block research.
+Only a specific authenticity concern with inspected source evidence stops contact
+lookup and drafting and displays a flag. No concern found is not a guarantee.
+Referral contacts exclude directors,
+VPs, founders and executive leadership. No generic hiring-team draft is offered.
+Older combined outreach runs remain readable; start new research for this checkpoint.
+
 The guided flow begins with a profile summary and a job-choice screen. All
 successfully assessed jobs are available, including model-rejected jobs you may
 explicitly choose anyway. Top picks are preselected on first viewing. Checkbox
 choices persist per run in selection.json; empty selections cannot launch outreach.
 Research/drafting receives only selected original job IDs and does not alter ranking.
-Research and drafting still run together in this first slice; contact approval
-between those steps is not implemented yet. Past runs live in a collapsed history.
+Research stops for recipient review before drafting. Past runs live in a collapsed history.
 
 On macOS, double-click **Start Career Desk.command** in the project folder.
 It uses the existing virtual environment and opens your browser. Keep its window

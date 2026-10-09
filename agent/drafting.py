@@ -94,7 +94,8 @@ def draft_outreach(job: JobPosting, profile: Profile, contact: dict | None = Non
     prompt = SYSTEM_PROMPT
     greeting = 'Hi Hiring team,'
     if contact is not None:
-        for key in ('name', 'title', 'organization', 'public_url', 'evidence'):
+        required = ('name', 'title', 'organization') if contact.get('source') == 'user_supplied' else ('name', 'title', 'organization', 'public_url', 'evidence')
+        for key in required:
             if not contact.get(key):
                 raise ValueError('Contact must come from validated research.')
         if any(c in contact['name'] for c in ('\n', '\r')):
@@ -102,6 +103,8 @@ def draft_outreach(job: JobPosting, profile: Profile, contact: dict | None = Non
         context['contact'] = contact
         greeting = f"Hi {contact['name']},"
         prompt += CONTACT_INSTRUCTIONS
+        if contact.get('source') == 'user_supplied':
+            prompt += '\nThe contact was supplied by the user, not web-verified. Use only their provided name/title/organization; never imply independent verification, prior familiarity, or knowledge of their work.\n'
         context['required_greeting'] = greeting
     try:
         response = requests.post(

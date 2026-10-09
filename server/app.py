@@ -12,6 +12,7 @@ import secrets
 import subprocess
 import sys
 import threading
+from uuid import uuid4
 from dataclasses import asdict
 import yaml
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,7 +50,20 @@ def start_run(data):
         mode = data.get('mode')
         command = [sys.executable, '-u', '-m']
         required = ['GEMINI_API_KEY']
-        if mode == 'search':
+        if mode in ('automatic', 'next_batch'):
+            count = data.get('max_jobs', 30)
+            if type(count) is not int or not 1 <= count <= 100:
+                raise ValueError('Assess between 1 and 100 jobs.')
+            command += ['agent.opportunities', '--max-jobs', str(count)]
+            if mode == 'next_batch':
+                source = run_dir(data.get('run')) / 'results.json'
+                if read_json(source).get('stage') != 'opportunities':
+                    raise ValueError('Choose an opportunities run.')
+                command += ['--source', str(source)]
+            else:
+                required += ['OPENWEBNINJA_API_KEY']
+            required += ['TAVILY_API_KEY']
+        elif mode == 'search':
             count = data.get('max_jobs', 10)
             if type(count) is not int or not 1 <= count <= 100:
                 raise ValueError('Assess between 1 and 100 jobs.')
@@ -63,10 +77,19 @@ def start_run(data):
                 if ids is None:
                     raise ValueError('Select jobs to pursue first.')
                 selected_jobs(source, job_ids=ids)
-                command += ['agent.shortlist_outreach', '--results', str(source), '--job-ids', *map(str, ids)]
+                command += ['agent.shortlist_outreach', '--research-only', '--results', str(source), '--job-ids', *map(str, ids)]
                 required += ['TAVILY_API_KEY']
             else:
                 command += ['agent.cli', '--resume-results', str(source), '--max-jobs', '100']
+        elif mode == 'draft':
+            directory = run_dir(data.get('run'))
+            source = directory / 'results.json'
+            from agent.reviewed_drafting import validate_choices
+            choices = data.get('choices')
+            validate_choices(read_json(source), choices)
+            snapshot = directory / f'choices-{uuid4().hex}.json'
+            snapshot.write_text(json.dumps(choices))
+            command += ['agent.reviewed_drafting', '--results', str(source), '--choices', str(snapshot)]
         else:
             raise ValueError('Unknown run action.')
         environment = worker_environment()
@@ -108,6 +131,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path == '/':
                 return self.reply((ROOT / 'server/index.html').read_text().replace('__TOKEN__', TOKEN), content_type='text/html')
+            if url.path == '/contacts.js':
+                return self.reply((ROOT / 'server/contacts.js').read_text(), content_type='text/javascript')
+            if url.path == '/opportunities.js':
+                return self.reply((ROOT / 'server/opportunities.js').read_text(), content_type='text/javascript')
             if url.path == '/api/profile':
                 path = ROOT / 'profile/profile.yaml'
                 return self.reply({'profile': asdict(load_profile(path if path.exists() else ROOT / 'profile/profile.yaml.example'))})
@@ -130,7 +157,8 @@ class Handler(BaseHTTPRequestHandler):
                 report = read_json(directory / 'results.json')
                 edits = directory / 'review-edits.json'
                 selection = directory / 'selection.json'
-                return self.reply({'report': report, 'edits': read_json(edits) if edits.exists() else {}, 'selection': read_json(selection) if selection.exists() else None})
+                recipients = directory / 'recipient-choices.json'
+                return self.reply({'report': report, 'edits': read_json(edits) if edits.exists() else {}, 'selection': read_json(selection) if selection.exists() else None, 'choices': read_json(recipients) if recipients.exists() else {}})
             return self.reply({'error': 'Not found'}, 404)
         except (ValueError, OSError) as error:
             return self.reply({'error': str(error)}, 400)
@@ -164,6 +192,17 @@ class Handler(BaseHTTPRequestHandler):
                     temporary = directory / 'selection.json.tmp'
                     temporary.write_text(json.dumps(ids))
                     temporary.replace(directory / 'selection.json')
+            elif self.path == '/api/recipients':
+                directory = run_dir(data.get('run'))
+                choices = data.get('choices')
+                report = read_json(directory / 'results.json')
+                if report.get('stage') != 'contact_review' or not isinstance(choices, dict) or set(choices) - {str(e['rank']) for e in report['jobs']}:
+                    raise ValueError('Invalid recipient choices.')
+                # Partial edits are saved here; strict validation occurs before drafting.
+                with LOCK:
+                    temporary = directory / 'recipient-choices.json.tmp'
+                    temporary.write_text(json.dumps(choices))
+                    temporary.replace(directory / 'recipient-choices.json')
             elif self.path == '/api/profile':
                 with LOCK:
                     if PROCESS is not None and PROCESS.poll() is None:
@@ -184,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
                 directory = run_dir(data.get('run'))
                 rank = data.get('rank')
                 report = read_json(directory / 'results.json')
-                if not any(e.get('rank') == rank and 'draft' in e for e in report.get('jobs', [])):
+                if not any((e.get('rank') == rank and 'draft' in e) or (e.get('id') == rank and 'draft' in e.get('outreach', {})) for e in report.get('jobs', [])):
                     raise ValueError('Draft not found.')
                 if any(not isinstance(data.get(k), str) or not data[k].strip() for k in ('subject', 'body')):
                     raise ValueError('Subject and message must be nonempty.')

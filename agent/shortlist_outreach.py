@@ -5,6 +5,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from dataclasses import asdict, replace
+from agent.company_check import check_company
 from agent.cli import positive_integer
 from agent.models import JobPosting
 from agent.profile import load_profile
@@ -51,7 +53,7 @@ def selected_jobs(path, ranks=None, job_ids=None):
     return [(r, JobPosting(**entries[ids[r - 1]]['job'])) for r in ranks]
 
 
-def run(path, profile, ranks=None, rpm=10, job_ids=None):
+def run(path, profile, ranks=None, rpm=10, job_ids=None, research_only=False):
     jobs = selected_jobs(path, ranks, job_ids)
     runtime = Runtime(rpm)
     for key in ('GEMINI_API_KEY', 'TAVILY_API_KEY'):
@@ -62,6 +64,7 @@ def run(path, profile, ranks=None, rpm=10, job_ids=None):
     report = {'created_at': datetime.now(timezone.utc).isoformat(), 'source_results': str(Path(path).resolve()),
               'status': 'running', 'gemini_rpm': rpm, 'jobs': [], 'nothing_sent': True}
     report['selection_kind'] = 'job_ids' if job_ids is not None else 'shortlist_ranks'
+    report['stage'] = 'contact_review' if research_only else 'drafts'
     def persist():
         temporary = directory / 'results.json.tmp'
         temporary.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -70,11 +73,25 @@ def run(path, profile, ranks=None, rpm=10, job_ids=None):
     for rank, job in jobs:
         print(f'Researching shortlist #{rank}: {job.title} | {job.company}')
         entry = {'rank': rank, 'title': job.title, 'company': job.company, 'status': 'researching',
-                 'research': {}, 'errors': []}
+                 'job': asdict(job), 'research': {}, 'errors': []}
         report['jobs'].append(entry)
         persist()
         try:
+            if research_only:
+                entry['verification'] = {}
+                checked = check_company(job, runtime, entry['verification'], persist)
+                if checked.get('concern') == 'flagged':
+                    entry.update(status='flagged', research={'status':'blocked','reason':'Evidence raised an authenticity concern. Contact research was not attempted.'})
+                    persist()
+                    continue
+                if checked['identity'] == 'confirmed':
+                    job = replace(job, company=checked['company_name'])
+                entry['job'] = asdict(job)
             contact = research_contact(job, runtime, entry['research'], persist)
+            if research_only:
+                entry['status'] = 'awaiting_recipient_choice'
+                persist()
+                continue
             entry['status'] = 'drafting'
             persist()
             draft = runtime.call(lambda: draft_outreach(job, profile, contact=contact),
@@ -105,6 +122,16 @@ def run(path, profile, ranks=None, rpm=10, job_ids=None):
     lines = ['# Outreach review', '', f"Status: {report['status']}", '', 'PENDING HUMAN REVIEW. Nothing sent.', '']
     for entry in report['jobs']:
         lines += [f"## {entry['rank']}. {entry['title']} | {entry['company']}", '', f"Status: {entry['status']}", '']
+        check = entry.get('verification')
+        if check:
+            lines += [f"Company identity: {check.get('identity', check.get('status', 'unavailable'))}", '',
+                      f"Official listing: {check.get('listing', 'not_confirmed')}", '',
+                      'Unconfirmed means evidence is missing, not that the listing is fake.', '', check.get('reason', ''), '']
+            for url_key, quote_key in [('official_url', 'company_quote'), ('listing_url', 'listing_quote')]:
+                if check.get(url_key):
+                    lines += [f"Source: {check[url_key]}", '', check.get(quote_key, ''), '']
+        application = (check or {}).get('listing_url') or entry['job']['source_url']
+        lines += [f"Listing / application: {application}", '']
         contact = entry['research'].get('contact')
         if contact:
             lines += [f"Contact: {contact['name']} — {contact['title']} — {contact['organization']}", '',
@@ -129,10 +156,11 @@ def main():
     parser.add_argument('--profile', default='profile/profile.yaml')
     parser.add_argument('--ranks', nargs='+', type=positive_integer, help='Shortlist positions; default all')
     parser.add_argument('--job-ids', nargs='+', type=positive_integer, help='Explicit assessed job selection instead of shortlist ranks')
+    parser.add_argument('--research-only', action='store_true', help='Stop before drafting for recipient review')
     parser.add_argument('--gemini-rpm', type=positive_integer, default=10)
     args = parser.parse_args()
     try:
-        directory, report = run(args.results, load_profile(args.profile), args.ranks, args.gemini_rpm, args.job_ids)
+        directory, report = run(args.results, load_profile(args.profile), args.ranks, args.gemini_rpm, args.job_ids, args.research_only)
     except (ValueError, OSError) as error:
         parser.exit(1, f'Stopped: {error}\n')
     print(f"Status: {report['status']}\nReview: {directory / 'review.md'}\nNothing sent.")

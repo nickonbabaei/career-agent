@@ -22,6 +22,15 @@ staff, without inventing an unnamed client. Do not infer geography from an email
 domain. Marketing bylines do not make a featured contact the author.
 Finish with name, exact listed title, organization, relationship employee or
 recruiter, a brief selection reason and uncertainties. Cite short exact excerpts
+Find an individual contributor, ordinary team member, or recruiter for a referral.
+Exclude founders, CEOs, chiefs, presidents, VPs, directors and executive leadership.
+If searches return similarly named organizations, do not treat them as the target.
+For none, say no supported contact was found within this run, not that none exists
+or that hiring is automated. Do not characterize an organization from search absence.
+Contractor platforms still have staff; automated onboarding is not a reason to stop.
+If inspected evidence identifies a parent company, use remaining searches to find
+staff associated with the brand at that parent. Verify the connection before selecting
+anyone; a parent-company employee alone does not prove affiliation with this brand.
 from inspected sections collectively supporting name, title and organization.
 public_url must be one cited page. Never guess an email or claim a referral is
 available. Unclear affiliation/conflicting identity means investigate or none.
@@ -34,7 +43,7 @@ RESEARCH_MODEL = 'gemini-3.1-flash-lite'
 FIELDS = {k: STR for k in ('query', 'url', 'reason', 'name', 'title', 'organization', 'relationship', 'public_url')}
 SCHEMA = {'type': 'object', 'properties': {
     'action': {'type': 'string', 'enum': ['search', 'read', 'section', 'finish', 'none']},
-    **FIELDS, 'section_id': {'type': 'integer'},
+    **FIELDS, 'relationship': {'type': 'string', 'enum': ['', 'employee', 'recruiter']}, 'section_id': {'type': 'integer'},
     'uncertainties': {'type': 'array', 'items': STR},
     'evidence': {'type': 'array', 'items': {'type': 'object', 'properties': {'url': STR, 'excerpt': STR},
                  'required': ['url', 'excerpt'], 'additionalProperties': False}}},
@@ -62,13 +71,21 @@ def source_quote(quote, text):
     return match.group(0) if match else None
 
 
+def eligible_title(title):
+    return not re.search(r'\b(ceo|cto|cfo|coo|cmo|cio|cpo|chief|president|vp|svp|evp|vice[ -]president|director|founder|co[ -]founder|executive)\b',title,re.I)
+
+
 def validate_contact(action, inspected):
     """Validate exact excerpt provenance; semantic support still needs review."""
     for key in ('name', 'title', 'organization', 'public_url', 'reason'):
         if not action[key].strip() or '\n' in action[key] or '\r' in action[key]:
             raise ResearchError('Missing/invalid contact field.')
-    if action['relationship'] not in ('employee', 'recruiter') or not action['evidence']:
-        raise ResearchError('Contact requires relationship and inspected evidence.')
+    if not eligible_title(action['title']):
+        raise ResearchError('Choose a non-executive employee or recruiter; directors, VPs, chiefs and founders are excluded.')
+    if action['relationship'] not in ('employee', 'recruiter'):
+        raise ResearchError('Relationship must be employee or recruiter; executive leadership is excluded.')
+    if not action['evidence']:
+        raise ResearchError('Contact requires excerpts from inspected pages.')
     quotes = []
     verified = []
     urls = set()
@@ -207,7 +224,9 @@ def research_contact(job, runtime, trace, persist=lambda: None):
             if kind == 'none':
                 if trace['failed_urls']:
                     raise ResearchError('Research ended without a contact after unrecovered page failures; inspect trace.')
-                trace.update(status='no_verified_contact', reason=action['reason'])
+                trace.update(status='no_verified_contact', model_reason=action['reason'], reason=
+                             f"No supported contact selected after {len(trace['searches'])} searches and {len(trace['pages'])} page reads. "
+                             'This limited search does not establish that no contact exists. Check the sources for relevance to the correct company.')
                 return None
             if kind == 'search':
                 results = runtime.call(lambda: search_web(action['query']), trace['errors'], 'search',

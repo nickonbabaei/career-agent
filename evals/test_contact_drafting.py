@@ -13,7 +13,8 @@ class ContactDraftingChecks(unittest.TestCase):
         contact = {'name': 'Alex Example', 'title': 'AI Consultant', 'organization': 'Example Agency',
                    'relationship': 'recruiter', 'public_url': 'https://example.com/team',
                    'evidence': [{'url': 'https://example.com/team', 'excerpt': 'Alex Example - AI Consultant'}]}
-        for selected, greeting in ((contact, 'Hi Alex Example,'), (None, 'Hi Hiring team,')):
+        manual = {**contact, 'source':'user_supplied', 'evidence':[], 'public_url':''}
+        for selected, greeting in ((contact, 'Hi Alex Example,'), (manual, 'Hi Alex Example,'), (None, 'Hi Hiring team,')):
             response = Mock()
             response.json.return_value = {'candidates': [{'finishReason': 'STOP', 'content': {'parts': [{'text': json.dumps({'subject': 'Engineer opening', 'body': greeting + '\n\nI built a prototype. Who handles the advertised role?'})}]}}]}
             with patch.dict('os.environ', {'GEMINI_API_KEY': 'fake'}), patch('agent.drafting.requests.post', return_value=response) as post:
@@ -22,5 +23,7 @@ class ContactDraftingChecks(unittest.TestCase):
             context = json.loads(post.call_args.kwargs['json']['contents'][0]['parts'][0]['text'])
             self.assertEqual(context['profile']['experience_bullets'], ['Built a prototype'])
             self.assertEqual('contact' in context, selected is not None)
+            if selected is manual:
+                self.assertIn('not web-verified', post.call_args.kwargs['json']['systemInstruction']['parts'][0]['text'])
         self.assertIn('unnamed client', CONTACT_INSTRUCTIONS)
         self.assertIn('authored a page', CONTACT_INSTRUCTIONS)

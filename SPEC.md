@@ -95,6 +95,53 @@ _TODO — to be spec'd. Draft direction:_
 
 ## Decisions log
 
+- 2026-10-09: Positive identity/listing claims lacking inspected evidence are
+  downgraded to unclear/not_confirmed with validation notes, not fatal research
+  errors. Preserve raw assessment in trace. Unsupported authenticity flags still
+  fail validation; provider errors retain retry/skip behavior.
+
+- 2026-10-09: Default UI action runs discovery, assessment, ranking, then vetted
+  contact research for the top three and automatic named-contact drafts. Review
+  happens at the end; nothing sends. A consolidated opportunities report keeps
+  original fit ranking independent of contact availability, separates no-contact,
+  unresearched, failed and flagged outcomes, and offers the next three ranked jobs.
+  Existing manual workflows remain available. Search/assessment budgets stay explicit;
+  this does not claim to search all jobs. Each follow-up writes a new report.
+
+- 2026-10-09: Supersede the identity gate: missing official evidence, location
+  omissions and remote/global wording do not block contact research. Vetting
+  blocks only a specific company/listing authenticity concern supported by an
+  inspected source quote (for example explicit impersonation or disavowal).
+  No concern found is not a guarantee of legitimacy. Routine checks remain in
+  traces, hidden in UI; only supported concerns are flagged. Blocked jobs cannot
+  draft, including manual recipients. Contact absence is bounded search failure,
+  never proof no employee exists; investigate evidenced parent-company links.
+
+- 2026-10-09: UI research checks company identity and official listing evidence
+  first. Two bounded Tavily searches, up to four discovered page reads, then one
+  structured model assessment (each operation retries once). Confirmed claims
+  require inspected quotes/URLs; official ATS listing must be linked from an
+  inspected official page. Unconfirmed is not fake. Unclear employer skips contact
+  research. Display both outcomes and sources. No fraud/availability assessment.
+  Exclude directors, VPs, executive leadership and founders from referral contacts.
+  New review flow requires named researched/manual recipient; absent contacts
+  offer application link or skip instead of generic drafting.
+
+- 2026-10-09: Constrain research relationship JSON field to employee/recruiter
+  or empty for non-finish actions; founders/executives use employee for outreach
+  routing. Separate invalid relationship from missing-evidence diagnostics.
+  No-contact display reports actual search/read counts and uncertainty, not the
+  model's unsupported claims about company structure or absence of contacts.
+  Raw model reasoning remains in the trace for inspection.
+
+- 2026-10-09: UI research now stops at recipient review. Save full selected job
+  snapshots with research results. Per job the user explicitly chooses researched
+  contact, user-supplied contact, general hiring team, or skip. Manual contacts
+  are labelled user supplied, require confirmation, and are never presented as
+  web-verified. Persist choices per run; a separate drafting command consumes a
+  validated snapshot and writes a new outreach run. Errors stay visible; failed
+  research may proceed only through explicit generic/manual choice. No sending.
+
 - 2026-10-08: Contact citation recovery records rejected model actions and
   identifies the offending URL/excerpt. Accept whitespace-only differences while
   retaining the exact original source excerpt; never accept paraphrases. If a
